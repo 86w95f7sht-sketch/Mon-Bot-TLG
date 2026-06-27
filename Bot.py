@@ -110,10 +110,9 @@ def bet_menu(game):
 ═══════════════════════════════════════
 HANDLERS
 ═══════════════════════════════════════
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_userbal = get_balance(user.id)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):user = update.effective_user
+    bal = get_balance(user.id)
 
-Premier lancement
     db = _load_db()
     if str(user.id) not in db:
         db[str(user.id)] = {"balance": 100, "deposited": 0}
@@ -189,7 +188,6 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount = float(context.args[0])
         if amount <= 0:
             raise ValueError
-Par défaut ajoute à l'expéditeur, sinon au cible
         target_id = user.id
         if len(context.args) > 1:
             target_id = int(context.args[1].replace("@", ""))
@@ -217,8 +215,7 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ═══════════════════════════════════════
 GAME HANDLERS
 ═══════════════════════════════════════
-async def play_slots(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
+async def play_slots(update: Update, context: ContextTypes.DEFAULT_TYPE):q = update.callback_query
     await q.answer()
     await q.edit_message_text("🎰 Mise ?", reply_markup=bet_menu("slots"))
     context.user_data["game"] = "slots"
@@ -248,7 +245,7 @@ async def play_roulette(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["game"] = "roulette"
 
 ═══════════════════════════════════════
-BET HANDLER (résultat des jeux)
+BET HANDLER
 ═══════════════════════════════════════
 async def handle_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -317,8 +314,11 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add", add_command))
-    app.add_handler(CallbackQueryHandler(callback_handler))logger.info("🎰 GameCash bot démarré !")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    app.add_handler(CallbackQueryHandler(callback_handler))
+⚠️ AUCUN MessageHandler ici — plus de "Salut ça marche" !!
+
+    logger.info("🎰 GameCash bot démarré !")app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if name == "main":
     main()
+```
