@@ -222,3 +222,66 @@ def get_profile(user_id, username=""):
         f"💵 Total gagné : {stats['total_win']:.2f}{CURRENCY}"
     )
 ```
+# ============ BACCARAT ============
+def creer_paquet():
+    couleurs = ["♠", "♥", "♦", "♣"]
+    valeurs = [("2",2),("3",3),("4",4),("5",5),("6",6),("7",7),("8",8),("9",9),("10",10),("Valet",0),("Dame",0),("Roi",0),("As",1)]
+    return [f"{v[0]}{c}" for c in couleurs for v in valeurs], {f"{v[0]}{c}": v[1] for c in couleurs for v in valeurs}
+
+def valeur_main(main, valeurs):
+    total = sum(valeurs[c] for c in main) % 10
+    return total
+
+def jouer_baccarat(user_id, mise):
+    bal = get_balance(user_id)
+    if mise < 1 or mise > bal:
+        return f"❌ Mise invalide (min 1{CURRENCY}, max {bal:.2f}{CURRENCY})", 0
+
+    paquet, valeurs = creer_paquet()
+    random.shuffle(paquet)
+
+    # Distribution
+    joueur = [paquet.pop(), paquet.pop()]
+    banque = [paquet.pop(), paquet.pop()]
+
+    v_joueur = valeur_main(joueur, valeurs)
+    v_banque = valeur_main(banque, valeurs)
+
+    # Règle du Baccarat (tirage automatique)
+    if v_joueur <= 5:
+        joueur.append(paquet.pop())
+        v_joueur = valeur_main(joueur, valeurs)
+
+    if v_banque <= 5:
+        # Tirage banque selon règles
+        if len(joueur) == 3:
+            trois_carte = valeurs[joueur[2]]
+            if trois_carte <= 7 and v_banque <= 5:
+                banque.append(paquet.pop())
+        else:
+            banque.append(paquet.pop())
+        v_banque = valeur_main(banque, valeurs)
+
+    gain = 0
+    # Le joueur mise sur "Joueur" (paiement 1:1)
+    if v_joueur > v_banque:
+        gain = mise
+        result = "🏆 **Joueur gagne !**"
+    elif v_banque > v_joueur:
+        gain = -mise
+        result = "🏆 **Banque gagne !**"
+    else:
+        result = "🤝 **Égalité** (remboursé)"
+        gain = 0
+
+    add_balance(user_id, gain)
+    bal = get_balance(user_id)
+
+    return (
+        f"🃏 **Baccarat**\n\n"
+        f"🧑 **Joueur :** {' '.join(joueur)} = {v_joueur}\n"
+        f"🏦 **Banque :** {' '.join(banque)} = {v_banque}\n\n"
+        f"{result}\n"
+        f"{'✅ +' + str(gain) if gain > 0 else '❌ -' + str(abs(gain)) if gain < 0 else '↩️ 0'}{CURRENCY}\n"
+        f"💰 Solde : {bal:.2f}{CURRENCY}"
+    ), gain
