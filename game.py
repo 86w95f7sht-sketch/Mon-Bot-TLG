@@ -3,13 +3,19 @@ import random
 import json
 from datetime import datetime, timedelta
 
-============ CONFIG ============
+═══════════════════════════════════════
+CONFIG
+═══════════════════════════════════════
 START_BALANCE = 0.0
 CASHBACK_PERCENT = 0.05
 CURRENCY = "€"
 
-============ DATA ============
-game_stats = {}  # user_id -> {"wins": int, "losses": int, "total_bet": float, "total_win": float, "last_bet_date": str}
+DB_FILE = "gamecash_db.json"
+
+═══════════════════════════════════════
+DATA
+═══════════════════════════════════════
+game_stats = {}
 
 slots_icons = ["🍒", "🍋", "🍊", "🍇", "🔔", "💎", "7️⃣", "⭐"]
 slots_payouts = {
@@ -20,9 +26,7 @@ slots_payouts = {
 roulette_numbers = list(range(37))
 roulette_colors = {0: "green"}
 for i in range(1, 37):
-    if i == 0:
-        roulette_colors[i] = "green"
-    elif 1 <= i <= 10:
+    if 1 <= i <= 10:
         roulette_colors[i] = "red" if i % 2 == 1 else "black"
     elif 11 <= i <= 18:
         roulette_colors[i] = "black" if i % 2 == 1 else "red"
@@ -31,257 +35,217 @@ for i in range(1, 37):
     else:
         roulette_colors[i] = "black" if i % 2 == 1 else "red"
 
-============ PLAYER ============
-def load_players():
+dice_values = [1, 2, 3, 4, 5, 6]
+
+═══════════════════════════════════════
+DB helpers
+═══════════════════════════════════════
+def _load_db():
     try:
-        with open("players.json", "r") as f:
+        with open(DB_FILE, "r") as f:
             return json.load(f)
-    except:
+    except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
-def save_players(players):
-    with open("players.json", "w") as f:
-        json.dump(players, f, indent=2)
+def _save_db(db):
+    with open(DB_FILE, "w") as f:
+        json.dump(db, f, indent=2)
 
 def get_balance(user_id):
-    players = load_players()
+    db = _load_db()
     uid = str(user_id)
-    if uid not in players:
-        players[uid] = {"balance": START_BALANCE, "username": "", "joined": str(datetime.now())}
-        save_players(players)
-    return players[uid]["balance"]
+    return float(db.get(uid, {}).get("balance", START_BALANCE))
 
 def set_balance(user_id, amount):
-    players = load_players()
+    db = _load_db()
     uid = str(user_id)
-    if uid in players:
-        players[uid]["balance"] = round(amount, 2)
-        save_players(players)
-    return round(amount, 2)
+    if uid not in db:
+        db[uid] = {"balance": START_BALANCE, "deposited": 0}
+    db[uid]["balance"] = float(amount)
+    _save_db(db)
 
 def add_balance(user_id, amount):
-    bal = get_balance(user_id)
-    new_bal = bal + amount
-    return set_balance(user_id, new_bal)
+    bal = get_balance(user_id) + amount
+    set_balance(user_id, bal)
+    return bal
 
-============ GAMES ============
-
-def play_slots(user_id, bet):
-    """Slot machine, returns (result_string, win_amount)"""
+═══════════════════════════════════════
+SLOTS
+═══════════════════════════════════════
+def jouer_slots(user_id, bet):
     bal = get_balance(user_id)
     if bal < bet:
-        return f"❌ Solde insuffisant ! Tu as {bal:.2f}{CURRENCY}", 0
+        return f"❌ Solde insuffisant ! ({bal:.2f}{CURRENCY})", False
 
-    add_balance(user_id, -bet)
+    bal = add_balance(user_id, -bet)
+    r1, r2, r3 = [random.randint(0, len(slots_icons)-1) for _ in range(3)]
 
-    reel1 = random.choice(slots_icons)
-    reel2 = random.choice(slots_icons)
-    reel3 = random.choice(slots_icons)
-
-Check if all three match
-    result_tuple = (slots_icons.index(reel1), slots_icons.index(reel2), slots_icons.index(reel3))
-    multiplier = slots_payouts.get(result_tuple, 0)
-
-    if multiplier > 0 and reel1 == reel2 == reel3:
-        win = round(bet * multiplier, 2)
-        add_balance(user_id, win)
-        return (
-            f"🎰 SLOTS\n"
-            f"┌─────┬─────┬─────┐\n"
-            f"│  {reel1}  │  {reel2}  │  {reel3}  │\n"
-            f"└─────┴─────┴─────┘\n\n"
-            f"🔥 JACKPOT ! x{multiplier}\n"
-            f"💰 +{win:.2f}{CURRENCY}",
-            win
-        )
-    else:
-        return (
-            f"🎰 SLOTS\n"
-            f"┌─────┬─────┬─────┐\n"
-            f"│  {reel1}  │  {reel2}  │  {reel3}  │\n"
-            f"└─────┴─────┴─────┘\n\n"
-            f"😔 Perdu... -{bet:.2f}{CURRENCY}",
-            0
-        )
-
-def play_roulette(user_id, bet, bet_type, bet_value):
-    """Roulette game. bet_type: 'number', 'color', 'odd_even'"""
-    bal = get_balance(user_id)
-    if bal < bet:return f"❌ Solde insuffisant ! Tu as {bal:.2f}{CURRENCY}", 0
-
-    add_balance(user_id, -bet)
-    result = random.choice(roulette_numbers)
-    color = roulette_colors[result]
-    win = 0
-    status = "❌ Perdu"
-
-    if bet_type == "number" and int(bet_value) == result:
-        win = round(bet * 36, 2)
-        status = "🔥 NUMÉRO DIRECT !"
-    elif bet_type == "color" and bet_value == color:
-        win = round(bet * 2, 2)
-        status = "✅ Bonne couleur !"
-    elif bet_type == "odd_even":
-        if bet_value == "odd" and result % 2 == 1 and result != 0:
-            win = round(bet * 2, 2)
-            status = "✅ Impair gagne !"
-        elif bet_value == "even" and result % 2 == 0 and result != 0:
-            win = round(bet * 2, 2)
-            status = "✅ Pair gagne !"
+    result_line = f"| {slots_icons[r1]} | {slots_icons[r2]} | {slots_icons[r3]} |"
+    multiplier = slots_payouts.get((r1, r2, r3), 0)
+    win = bet * multiplier
 
     if win > 0:
         add_balance(user_id, win)
+        bal2 = get_balance(user_id)
+        msg = (
+            f"🎰 Slots\n\n"
+            f"{result_line}\n\n"
+            f"✅ Gagné ! +{win:.2f}{CURRENCY}\n"
+            f"💰 Nouveau solde : {bal2:.2f}{CURRENCY}"
+        )
+    else:
+        bal2 = get_balance(user_id)
+        msg = (
+            f"🎰 Slots\n\n"
+            f"{result_line}\n\n"
+            f"❌ Perdu... -{bet:.2f}{CURRENCY}\n"
+            f"💰 Nouveau solde : {bal2:.2f}{CURRENCY}"
+        )
+    return msg, win > 0
 
-    return (
-        f"🎡 ROULETTE\n\n"
-        f"Bille s'arrête sur... {result} {color}\n\n"
-        f"{status}\n"
-        f"{'💰 +' + str(win) + CURRENCY if win > 0 else f'😔 -{bet:.2f}' + CURRENCY}",
-        win
-    )
-
-def play_dice(user_id, bet, prediction):
-    """Dice game: prediction = 'over' or 'under', value = 50 (default)"""
+═══════════════════════════════════════
+DICE═══════════════════════════════════════
+def jouer_dice(user_id, bet):
     bal = get_balance(user_id)
     if bal < bet:
-        return f"❌ Solde insuffisant ! Tu as {bal:.2f}{CURRENCY}", 0
+        return f"❌ Solde insuffisant ! ({bal:.2f}{CURRENCY})", False
 
-    add_balance(user_id, -bet)
-    roll = random.randint(1, 100)
-    win = 0
+    bal = add_balance(user_id, -bet)
+    dice = random.randint(1, 6)
+    target = random.randint(3, 4)  # 50/50 environ
 
-    if prediction == "over" and roll > 50:
-        win = round(bet * 1.96, 2)
-        status = "✅ Plus de 50 !"
-    elif prediction == "under" and roll <= 50:
-        win = round(bet * 1.96, 2)
-        status = "✅ Moins de 50 !"
-    else:
-        status = "❌ Perdu"
-
-    if win > 0:
+    if dice >= target:
+        win = bet * 1.8
         add_balance(user_id, win)
+        bal2 = get_balance(user_id)
+        msg = (
+            f"🎲 Dice\n\n"
+            f"🎲 Résultat : {dice}\n"
+            f"🎯 Cible : {target}+\n\n"
+            f"✅ Gagné ! +{win:.2f}{CURRENCY}\n"
+            f"💰 Solde : {bal2:.2f}{CURRENCY}"
+        )
+    else:
+        bal2 = get_balance(user_id)
+        msg = (
+            f"🎲 Dice\n\n"
+            f"🎲 Résultat : {dice}\n"
+            f"🎯 Cible : {target}+\n\n"
+            f"❌ Perdu... -{bet:.2f}{CURRENCY}\n"
+            f"💰 Solde : {bal2:.2f}{CURRENCY}"
+        )
+    return msg, dice >= target
 
-    return (
-        f"🎲 DICE\n\n"
-        f"Résultat : {roll}\n"
-        f"Prédiction : {prediction} 50\n\n"
-        f"{status}\n"
-        f"{'💰 +' + str(win) + CURRENCY if win > 0 else f'😔 -{bet:.2f}' + CURRENCY}",
-        win
-    )
-
-def play_coinflip(user_id, bet, side):
+═══════════════════════════════════════
+BACCARAT (simplifié)
+═══════════════════════════════════════
+def jouer_baccarat(user_id, bet):
     bal = get_balance(user_id)
     if bal < bet:
-        return f"❌ Solde insuffisant ! Tu as {bal:.2f}{CURRENCY}", 0
+        return f"❌ Solde insuffisant ! ({bal:.2f}{CURRENCY})", False
 
-    add_balance(user_id, -bet)
-    result = random.choice(["pile", "face"])
-    win = 0
+    bal = add_balance(user_id, -bet)
+    player = random.randint(0, 9)
+    banker = random.randint(0, 9)
 
-    if side == result:
-        win = round(bet * 1.96, 2)
+    if player > banker:
+        win = bet * 1.9
         add_balance(user_id, win)
-        status = f"✅ C'est {result} !"
+        bal2 = get_balance(user_id)
+        msg = (
+            f"🃏 Baccarat\n\n"
+            f"👤 Joueur : {player}\n"
+            f"🏦 Banque : {banker}\n\n"
+            f"✅ Joueur gagne ! +{win:.2f}{CURRENCY}\n"
+            f"💰 Solde : {bal2:.2f}{CURRENCY}"
+        )
+    elif banker > player:
+        bal2 = get_balance(user_id)
+        msg = (
+            f"🃏 Baccarat\n\n"
+            f"👤 Joueur : {player}\n"
+            f"🏦 Banque : {banker}\n\n"
+            f"❌ Banque gagne... -{bet:.2f}{CURRENCY}\n"
+            f"💰 Solde : {bal2:.2f}{CURRENCY}"
+        )
     else:
-        status = f"❌ C'est {result}..."
+        add_balance(user_id, bet)
+        bal2 = get_balance(user_id)
+        msg = (
+            f"🃏 Baccarat\n\n"
+            f"👤 Joueur : {player}\n"
+            f"🏦 Banque : {banker}\n\n"
+            f"🤝 Égalité ! Remboursé\n"
+            f"💰 Solde : {bal2:.2f}{CURRENCY}"
+        )
+    return msg, player > banker
 
-    return (
-        f"🪙 PILE OU FACE\n\n"
-        f"Résultat : {result}\n"
-        f"Ton choix : {side}\n\n"
-        f"{status}\n"
-        f"{'💰 +' + str(win) + CURRENCY if win > 0 else f'😔 -{bet:.2f}' + CURRENCY}",
-        win
-    )
-
-============ CASHBACK ============
-def apply_cashback(user_id):
-    """Apply 5% cashback on net losses"""
-    stats = game_stats.get(str(user_id), {})
-    if not stats:
-        return None
-    net = stats.get("total_bet", 0) - stats.get("total_win", 0)
-    if net <= 0:
-        return None
-    cashback = round(net * CASHBACK_PERCENT, 2)
-    add_balance(user_id, cashback)
-    return cashback
-
-============ STATS ============
-def get_profile(user_id, username=""):
+═══════════════════════════════════════
+COINFLIP
+═══════════════════════════════════════
+def jouer_coinflip(user_id, bet):
     bal = get_balance(user_id)
-    stats = game_stats.get(str(user_id), {"wins": 0, "losses": 0, "total_bet": 0, "total_win": 0})
-    return (
-        f"👤 PROFIL\n\n"
-        f"Nom : {username or 'Inconnu'}\n"
-        f"💰 Solde : {bal:.2f}{CURRENCY}\n"
-        f"🏆 Victoires : {stats['wins']}\n"
-        f"💀 Défaites : {stats['losses']}\n"f"📊 Total misé : {stats['total_bet']:.2f}{CURRENCY}\n"
-        f"💵 Total gagné : {stats['total_win']:.2f}{CURRENCY}"
-    )
+    if bal < bet:
+        return f"❌ Solde insuffisant ! ({bal:.2f}{CURRENCY})", False
+
+    bal = add_balance(user_id, -bet)
+    result = random.choice(["Pile", "Face"])
+    user_choice = random.choice(["Pile", "Face"])  # aleatoire pour demo
+
+    if result == user_choice:
+        win = bet * 1.9
+        add_balance(user_id, win)
+        bal2 = get_balance(user_id)
+        msg = (
+            f"🪙 Pile ou Face\n\n"
+            f"🪙 Résultat : {result}\n"
+            f"🎯 Ton choix : {user_choice}\n\n"
+            f"✅ Gagné ! +{win:.2f}{CURRENCY}\n"
+            f"💰 Solde : {bal2:.2f}{CURRENCY}"
+        )
+    else:
+        bal2 = get_balance(user_id)
+        msg = (
+            f"🪙 Pile ou Face\n\n"
+            f"🪙 Résultat : {result}\n"
+            f"🎯 Ton choix : {user_choice}\n\n"
+            f"❌ Perdu... -{bet:.2f}{CURRENCY}\n"
+            f"💰 Solde : {bal2:.2f}{CURRENCY}"
+        )
+    return msg, result == user_choice═══════════════════════════════════════
+ROULETTE
+═══════════════════════════════════════
+def jouer_roulette(user_id, bet):
+    bal = get_balance(user_id)
+    if bal < bet:
+        return f"❌ Solde insuffisant ! ({bal:.2f}{CURRENCY})", False
+
+    bal = add_balance(user_id, -bet)
+    num = random.randint(0, 36)
+    color = roulette_colors[num]
+
+Mise sur rouge/noir aléatoire pour demo
+    user_color = random.choice(["red", "black"])
+
+    if color == user_color:
+        win = bet * 1.9
+        add_balance(user_id, win)
+        bal2 = get_balance(user_id)
+        msg = (
+            f"🔴⚫ Roulette\n\n"
+            f"🎱 Numéro : {num} ({color})\n"
+            f"🎯 Mise : {user_color}\n\n"
+            f"✅ Gagné ! +{win:.2f}{CURRENCY}\n"
+            f"💰 Solde : {bal2:.2f}{CURRENCY}"
+        )
+    else:
+        bal2 = get_balance(user_id)
+        msg = (
+            f"🔴⚫ Roulette\n\n"
+            f"🎱 Numéro : {num} ({color})\n"
+            f"🎯 Mise : {user_color}\n\n"
+            f"❌ Perdu... -{bet:.2f}{CURRENCY}\n"
+            f"💰 Solde : {bal2:.2f}{CURRENCY}"
+        )
+    return msg, color == user_color
 ```
-# ============ BACCARAT ============
-def creer_paquet():
-    couleurs = ["♠", "♥", "♦", "♣"]
-    valeurs = [("2",2),("3",3),("4",4),("5",5),("6",6),("7",7),("8",8),("9",9),("10",10),("Valet",0),("Dame",0),("Roi",0),("As",1)]
-    return [f"{v[0]}{c}" for c in couleurs for v in valeurs], {f"{v[0]}{c}": v[1] for c in couleurs for v in valeurs}
-
-def valeur_main(main, valeurs):
-    total = sum(valeurs[c] for c in main) % 10
-    return total
-
-def jouer_baccarat(user_id, mise):
-    bal = get_balance(user_id)
-    if mise < 1 or mise > bal:
-        return f"❌ Mise invalide (min 1{CURRENCY}, max {bal:.2f}{CURRENCY})", 0
-
-    paquet, valeurs = creer_paquet()
-    random.shuffle(paquet)
-
-    # Distribution
-    joueur = [paquet.pop(), paquet.pop()]
-    banque = [paquet.pop(), paquet.pop()]
-
-    v_joueur = valeur_main(joueur, valeurs)
-    v_banque = valeur_main(banque, valeurs)
-
-    # Règle du Baccarat (tirage automatique)
-    if v_joueur <= 5:
-        joueur.append(paquet.pop())
-        v_joueur = valeur_main(joueur, valeurs)
-
-    if v_banque <= 5:
-        # Tirage banque selon règles
-        if len(joueur) == 3:
-            trois_carte = valeurs[joueur[2]]
-            if trois_carte <= 7 and v_banque <= 5:
-                banque.append(paquet.pop())
-        else:
-            banque.append(paquet.pop())
-        v_banque = valeur_main(banque, valeurs)
-
-    gain = 0
-    # Le joueur mise sur "Joueur" (paiement 1:1)
-    if v_joueur > v_banque:
-        gain = mise
-        result = "🏆 **Joueur gagne !**"
-    elif v_banque > v_joueur:
-        gain = -mise
-        result = "🏆 **Banque gagne !**"
-    else:
-        result = "🤝 **Égalité** (remboursé)"
-        gain = 0
-
-    add_balance(user_id, gain)
-    bal = get_balance(user_id)
-
-    return (
-        f"🃏 **Baccarat**\n\n"
-        f"🧑 **Joueur :** {' '.join(joueur)} = {v_joueur}\n"
-        f"🏦 **Banque :** {' '.join(banque)} = {v_banque}\n\n"
-        f"{result}\n"
-        f"{'✅ +' + str(gain) if gain > 0 else '❌ -' + str(abs(gain)) if gain < 0 else '↩️ 0'}{CURRENCY}\n"
-        f"💰 Solde : {bal:.2f}{CURRENCY}"
-    ), gain
