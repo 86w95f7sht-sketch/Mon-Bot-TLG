@@ -1,0 +1,9 @@
+{
+  "name": "mon-bot-tg",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "grammy": "^1.30.0",
+    "dotenv": "^16.4.7"
+  }
+}
