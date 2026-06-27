@@ -7,7 +7,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 import games  # ← notre fichier games.py
 
 ============ CONFIG ============
-TOKEN = "TON_TOKEN_TELEGRAM_ICI"
+TOKEN = "8772878613:AAEnlv3sAM6lfwB4hB0iFD1ht6EOKT6oT3M"
 ADMIN_ID = 8652730606  # ton ID Telegram
 CURRENCY = games.CURRENCY
 
